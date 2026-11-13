@@ -61,6 +61,72 @@ def cpair_triple(a: int, b: int, c: int) -> int:
     return cpair(a, cpair(b, c))
 
 
+def cpair_quad(a: int, b: int, c: int, d: int) -> int:
+    """cQuad: cPair a (cPair b (cPair c d))."""
+    return cpair(a, cpair(b, cpair(c, d)))
+
+
+# --- Sequence Encoding matching cPair.v and codeList.v ---
+
+def code_list(l: List[int]) -> int:
+    """Gödel number of a list of natural numbers matching codeList in cPair.v:
+    codeList [] = 0
+    codeList (n :: l') = S (cPair n (codeList l'))
+    """
+    res = 0
+    for x in reversed(l):
+        if x < 0:
+            raise ValueError(f"code_list requires non-negative integers, got {x}")
+        res = 1 + cpair(x, res)
+    return res
+
+
+def decode_list(c: int) -> List[int]:
+    """Decode a Gödel number back to a list of natural numbers."""
+    if c < 0:
+        raise ValueError(f"decode_list requires non-negative integer, got {c}")
+    res: List[int] = []
+    curr = c
+    while curr > 0:
+        inner = curr - 1
+        x, curr = cpair_pi1_pi2(inner)
+        res.append(x)
+    return res
+
+
+def code_length(c: int) -> int:
+    """Compute length of an encoded list matching codeLength in codeList.v."""
+    count = 0
+    curr = c
+    while curr > 0:
+        count += 1
+        curr = cpair_pi2(curr - 1)
+    return count
+
+
+def code_nth(n: int, c: int) -> int:
+    """Extract n-th element from an encoded list matching codeNth in cPair.v (0-indexed).
+    Returns 0 if n is out of bounds.
+    """
+    if n < 0:
+        return 0
+    curr = c
+    for _ in range(n):
+        if curr == 0:
+            return 0
+        curr = cpair_pi2(curr - 1)
+    if curr == 0:
+        return 0
+    return cpair_pi1(curr - 1)
+
+
+def code_app(c1: int, c2: int) -> int:
+    """Concatenate two encoded lists matching codeApp in codeList.v."""
+    l1 = decode_list(c1)
+    l2 = decode_list(c2)
+    return code_list(l1 + l2)
+
+
 # --- 2. Language Symbols and AST (Languages.v, fol.v) ---
 
 class LNTFunction:
@@ -365,3 +431,109 @@ def construct_diagonal_sentence(
     numeral_term = nat_to_term(numeral_val)
     b_sentence = substitute_formula(theta, nv, numeral_term)
     return b_sentence, theta, nv
+
+
+def construct_rosser_predicate(
+    code_sys_prf: Optional[Formula] = None,
+    code_sys_prf_not: Optional[Formula] = None,
+    var_idx: int = 0,
+) -> Formula:
+    """Constructs Rosser's predicate A(v0) matching rosser.v:
+    A := forallH 1 (impH codeSysPrf (existH 2 (andH (LT (var 2) (var 1))
+                                                    (substituteFormula codeSysPrfNot 1 (var 2))))).
+
+    where:
+    - var 0 is the formula code
+    - var 1 is the proof code for formula
+    - var 2 is the proof code for negation of formula
+    """
+    if code_sys_prf is None:
+        # Default mock proof relation: var(1) is a proof of var(var_idx)
+        code_sys_prf = Equal(var(1), var(var_idx))
+    if code_sys_prf_not is None:
+        # Default mock proof relation for negation
+        code_sys_prf_not = Equal(succ_term(var(1)), var(var_idx))
+
+    # substitute var(2) for var(1) in code_sys_prf_not
+    sub_prf_not = substitute_formula(code_sys_prf_not, 1, var(2))
+
+    # existH 2 (andH (LT (var 2) (var 1)) sub_prf_not)
+    exist_smaller = exist_h(2, and_h(AtomicLT(var(2), var(1)), sub_prf_not))
+
+    # impH codeSysPrf exist_smaller
+    imp_clause = ImpH(code_sys_prf, exist_smaller)
+
+    # forallH 1 imp_clause
+    rosser_a = ForallH(1, imp_clause)
+    return rosser_a
+
+
+def construct_rosser_sentence(
+    code_sys_prf: Optional[Formula] = None,
+    code_sys_prf_not: Optional[Formula] = None,
+    mock_code: Optional[int] = None,
+) -> Tuple[Formula, Formula, int]:
+    """Constructs the Rosser sentence R by applying Carnap-Gödel diagonalization
+    to Rosser's predicate A(v0).
+    R <-> A[v0 := numeral(code(R))]
+    Matching Rosser's Incompleteness theorem in rosser.v.
+    """
+    predicate = construct_rosser_predicate(code_sys_prf, code_sys_prf_not, var_idx=0)
+    return construct_diagonal_sentence(predicate, free_var=0, mock_code=mock_code)
+
+
+# --- 6. Incompleteness and Rosser Independence Verification ---
+
+@dataclass
+class DiscreteProofSystem:
+    """Constructive model of a formal deductive system T for proof checking and
+    independence verification of Gödel and Rosser sentences.
+    """
+    axioms: Set[int]
+    proofs: dict[int, Set[int]]
+
+    def __init__(self, axioms: Optional[Set[int]] = None) -> None:
+        self.axioms = set(axioms or set())
+        self.proofs = {}
+
+    def add_proof(self, formula_code: int, proof_code: int) -> None:
+        if formula_code not in self.proofs:
+            self.proofs[formula_code] = set()
+        self.proofs[formula_code].add(proof_code)
+
+    def is_provable(self, formula_code: int) -> bool:
+        return formula_code in self.axioms or bool(self.proofs.get(formula_code))
+
+    def has_proof(self, formula_code: int, proof_code: int) -> bool:
+        return proof_code in self.proofs.get(formula_code, set())
+
+    def minimal_proof(self, formula_code: int) -> Optional[int]:
+        prf_set = self.proofs.get(formula_code, set())
+        return min(prf_set) if prf_set else None
+
+    def is_consistent(self, neg_map: dict[int, int]) -> bool:
+        """System is consistent if no formula and its negation are both provable."""
+        for f, neg_f in neg_map.items():
+            if self.is_provable(f) and self.is_provable(neg_f):
+                return False
+        return True
+
+    def evaluate_goedel_sentence(self, g_code: int) -> bool:
+        """Gödel sentence G asserts: G is not provable.
+        In standard model, G is true iff there is no proof of G.
+        """
+        return not self.is_provable(g_code)
+
+    def evaluate_rosser_sentence(self, r_code: int, neg_r_code: int) -> bool:
+        """Rosser sentence R asserts: for every proof p of R, there is q < p proving neg_R.
+        In standard model, if R has no proofs, it is vacuously true.
+        """
+        r_proofs = self.proofs.get(r_code, set())
+        if not r_proofs:
+            return True
+        neg_proofs = self.proofs.get(neg_r_code, set())
+        for p in r_proofs:
+            if not any(q < p for q in neg_proofs):
+                return False
+        return True
+

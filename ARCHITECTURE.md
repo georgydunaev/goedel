@@ -137,5 +137,7 @@ The formalization boundary in `goedel2.v` leaves HBL2 and HBL3 as unproven hypot
 ## Executable Verification Toolchain
 
 The repository includes a standalone Python verification engine in `tests/`:
-- `tests/arithmetic_verifier.py`: Pure Python AST model and exact Gödel number coder/decoder matching `cPair.v`, `code.v`, and `codeNatToTerm.v`.
-- `tests/test_goedel.py`: Comprehensive test suite verifying bijection laws, roundtrip encoding, numeral recurrence invariants, free variable tracking, capture-avoiding substitution, diagonal construction, and structural theorem audits.
+- `tests/arithmetic_verifier.py`: Pure Python AST model and exact Gödel number coder/decoder matching `cPair.v`, `code.v`, `codeList.v`, `codeNatToTerm.v`, and `rosser.v`. Includes Cantor pairing, sequence encoding, term/formula coding, substitution, Carnap-Gödel diagonalization, Rosser sentence construction, and discrete proof system evaluation.
+- `tests/arithmetization_suite.py`: Comprehensive automated property testing suite verifying Cantor pairing injectivity, sequence encoding bijection, term and formula Gödel numbering injectivity and effective decodability, and capture-avoiding substitution.
+- `tests/test_arithmetization.py`: Unittest test discovery runner for the arithmetization property suite.
+- `tests/test_goedel.py`: Comprehensive test suite verifying bijection laws, sequence encoding, roundtrip encoding, numeral recurrence invariants, free variable tracking, capture-avoiding substitution, diagonal construction, Rosser sentence consistency checks, and structural theorem audits across Coq modules.
